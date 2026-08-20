@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 import pandas as pd
 import pytest
 
-from fpl.ingest import curate
+from ingest import curate
 
 
 def _write(tmp_path, season, name, payload, stamp):
@@ -23,6 +23,7 @@ def _write(tmp_path, season, name, payload, stamp):
 def _element(pid, element_type=3, team=1, cost=75, pens=None):
     return {
         "id": pid,
+        "code": 100000 + pid,
         "element_type": element_type,
         "team": team,
         "web_name": f"Player{pid}",

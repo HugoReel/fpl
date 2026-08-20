@@ -39,6 +39,8 @@ log = logging.getLogger(__name__)
 # column is a warning worth reading.
 EXPECTED_ELEMENT_FIELDS = {
     "id",
+    # stable cross-season identity, curation depends on it
+    "code",
     "element_type",
     "team",
     "web_name",

@@ -40,6 +40,29 @@ CURATED_ROOT = Path("data/curated")
 
 log = logging.getLogger(__name__)
 
+# Points were earned under different rules in different seasons. Downstream
+# models must know which regime a row belongs to, so every curated table
+# carries a rule_regime column. defcon arrived in 2025-26. The 2026-27 BPS
+# rework does not change defcon but does change how bonus is earned, so it
+# gets its own regime tag.
+RULE_REGIMES = {
+    "2021-22": "pre_defcon",
+    "2022-23": "pre_defcon",
+    "2023-24": "pre_defcon",
+    "2024-25": "pre_defcon",
+    "2025-26": "defcon_v1",
+    "2026-27": "defcon_v1_bps26",
+}
+
+
+def rule_regime(season: str) -> str:
+    if season not in RULE_REGIMES:
+        raise ValueError(
+            f"no rule regime defined for season {season}. Add it to RULE_REGIMES "
+            "after checking what changed in the rules that year."
+        )
+    return RULE_REGIMES[season]
+
 _STAMP = re.compile(r"_(\d{8}T\d{6}Z)\.json$")
 
 # Scoring identifiers that appear in the live endpoint's per-fixture
@@ -64,6 +87,8 @@ EXPLAIN_IDENTIFIERS = {
 
 PLAYER_COLUMNS = {
     "id": "player_id",
+    # code is stable across seasons, id is not. Both live on every table.
+    "code": "player_code",
     "element_type": "element_type",
     "team": "team_id",
     "web_name": "web_name",
@@ -145,7 +170,7 @@ def live_gameweeks(season: str, as_of: datetime | None = None) -> dict[int, Path
 # --------------------------------------------------------------------------
 
 
-def build_players(bootstrap: dict, season: str) -> pd.DataFrame:
+def build_players(bootstrap: dict, season: str, source: str = "live") -> pd.DataFrame:
     df = pd.DataFrame(bootstrap["elements"])
     keep = [c for c in PLAYER_COLUMNS if c in df.columns]
     df = df[keep].rename(columns=PLAYER_COLUMNS)
@@ -165,10 +190,12 @@ def build_players(bootstrap: dict, season: str) -> pd.DataFrame:
 
     df["has_penalties"] = df.get("penalties_order", pd.Series(dtype=float)).eq(1)
     df["season"] = season
+    df["source"] = source
+    df["rule_regime"] = rule_regime(season)
     return df
 
 
-def build_fixtures(fixtures: list[dict], season: str) -> pd.DataFrame:
+def build_fixtures(fixtures: list[dict], season: str, source: str = "live") -> pd.DataFrame:
     df = pd.DataFrame(fixtures)
     keep = [
         "id",
@@ -212,11 +239,15 @@ def build_fixtures(fixtures: list[dict], season: str) -> pd.DataFrame:
     )
 
     df["season"] = season
+    df["source"] = source
+    df["rule_regime"] = rule_regime(season)
     return df
 
 
 def build_player_fixture(
-    live_by_gw: dict[int, Path], season: str
+    live_by_gw: dict[int, Path],
+    season: str,
+    player_code_by_id: dict[int, int] | None = None,
 ) -> pd.DataFrame:
     """One row per player per fixture, from the live endpoint's explain blocks.
 
@@ -258,10 +289,16 @@ def build_player_fixture(
     for col in EXPLAIN_IDENTIFIERS:
         if col not in df.columns:
             df[col] = 0
-        df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).astype(int)
+        # int64 explicitly: bare int is platform sized and gives int32 on
+        # Windows, which breaks dtype parity with the historical tables.
+        df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).astype("int64")
 
     df["started"] = df["minutes"].gt(0)
     df["played_60"] = df["minutes"].ge(60)
+    if player_code_by_id is not None:
+        df["player_code"] = df["player_id"].map(player_code_by_id).astype("int64")
+    df["source"] = "live"
+    df["rule_regime"] = rule_regime(season)
     return df
 
 
@@ -283,7 +320,15 @@ def build_player_gw(player_fixture: pd.DataFrame, season: str) -> pd.DataFrame:
         player_fixture.groupby(["season", "gw", "player_id"], as_index=False)
         .agg(n_fixtures=("fixture_id", "count"), n_played_60=("played_60", "sum"))
     )
-    return df.merge(counts, on=["season", "gw", "player_id"], how="left")
+    df = df.merge(counts, on=["season", "gw", "player_id"], how="left")
+
+    # player_code, source and rule_regime are constant per player per season,
+    # so they survive aggregation via a merge rather than the groupby keys.
+    meta_cols = [c for c in ("player_code", "source", "rule_regime") if c in player_fixture.columns]
+    if meta_cols:
+        meta = player_fixture[["player_id", *meta_cols]].drop_duplicates("player_id")
+        df = df.merge(meta, on="player_id", how="left")
+    return df
 
 
 def attach_prices(player_gw: pd.DataFrame, season: str, as_of: datetime | None) -> pd.DataFrame:
@@ -316,6 +361,10 @@ def attach_prices(player_gw: pd.DataFrame, season: str, as_of: datetime | None) 
     prices = pd.concat(frames).sort_values("snapshot_ts")
     prices = prices.drop_duplicates(subset=["player_id", "gw"], keep="last")
     prices["price"] = pd.to_numeric(prices["now_cost"], errors="coerce") / 10.0
+    # The API serves these as strings. Coerce so live and historical tables
+    # share dtypes.
+    prices["selected_by_percent"] = pd.to_numeric(prices["selected_by_percent"], errors="coerce")
+    prices["ep_next"] = pd.to_numeric(prices["ep_next"], errors="coerce")
     prices = prices.drop(columns=["now_cost", "snapshot_ts"])
     return player_gw.merge(prices, on=["player_id", "gw"], how="left")
 
@@ -349,7 +398,8 @@ def run(season: str, as_of: datetime | None = None) -> dict[str, Path]:
     live_by_gw = live_gameweeks(season, as_of)
     if live_by_gw:
         log.info("found live snapshots for gameweeks %s", sorted(live_by_gw))
-        pf = build_player_fixture(live_by_gw, season)
+        player_code_by_id = {e["id"]: e["code"] for e in bootstrap["elements"]}
+        pf = build_player_fixture(live_by_gw, season, player_code_by_id)
         written["player_fixture"] = _write(pf, out_dir / "player_fixture.parquet")
 
         pgw = build_player_gw(pf, season)
