@@ -1,0 +1,26 @@
+[project]
+name = "fpl-system"
+version = "0.1.0"
+description = "Component-based FPL points prediction and MILP squad optimisation"
+requires-python = ">=3.11"
+dependencies = [
+    "requests>=2.32",
+    "pandas>=2.2",
+    "pyarrow>=17",
+    "numpy>=2.0",
+    "lightgbm>=4.5",
+    "scikit-learn>=1.5",
+    "highspy>=1.7",
+    "penaltyblog>=1.0",
+    "duckdb>=1.1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "ruff>=0.6", "mlflow>=2.16"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 95
