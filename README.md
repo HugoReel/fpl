@@ -7,9 +7,9 @@ Component-based FPL points prediction and MILP squad optimisation for 2026/27.
 Three rules that, if broken, waste months of work.
 
 1. **Snapshot from day one.** The FPL API overwrites itself. Data you do not capture
-   at the time is gone forever. Run `fpl.ingest.snapshot` before you write a single
+   at the time is gone forever. Run `ingest.snapshot` before you write a single
    model. It costs about 2 MB a week.
-2. **All scoring goes through `fpl/scoring/rules_2026_27.py`.** Never inline a points
+2. **All scoring goes through `scoring/rules_2026_27.py`.** Never inline a points
    calculation anywhere else. Rules change every August and you want that to be a
    one file diff.
 3. **The metric is realised optimised-team points, not RMSE.** A model with worse
@@ -30,13 +30,13 @@ Nothing else gets built until that runs end to end.
 **Week 1: get data flowing**
 
 - [ ] `uv sync`, confirm `pytest` passes
-- [ ] Run `python -m fpl.ingest.snapshot --season 2026-27` and eyeball the output JSON
+- [ ] Run `python -m ingest.snapshot --season 2026-27` and eyeball the output JSON
 - [ ] Schedule it: cron Friday evening, Saturday pre-deadline, Tuesday. Or a GitHub
       Action on the same cadence. Do not overthink this
 - [ ] Clone `vaastav/Fantasy-Premier-League` for historical seasons. Note the
       documented trap: the `xP` column is scraped after the gameweek and leaks.
       `shift(1)` within player or drop it
-- [ ] Write `fpl/ingest/curate.py`: bootstrap + live snapshots -> tidy `player_gw`
+- [ ] Write `ingest/curate.py`: bootstrap + live snapshots -> tidy `player_gw`
       Parquet partitioned by season and gw
 
 **Week 2: the minutes model**
@@ -70,14 +70,17 @@ not v0.3.
 ## Layout
 
 ```
-fpl/
-  ingest/     snapshot.py (done), curate.py, schema checks
-  scoring/    rules_2026_27.py (done) - the only place scoring lives
-  models/     minutes/ attack/ team/ defcon/ bonus/ compose.py
-  optimise/   milp.py, chips.py, overrides.py
-  backtest/   walk-forward engine, paired comparisons, resampling
-  eval/       metrics, points-to-rank, top10k study
-  baselines/  ep_next, price, odds-only, last5, openfpl adapter
+ingest/     snapshot.py (done), curate.py, schema checks
+mapping/    id maps, overrides.csv, join validators
+features/   feature builders, rolling windows, set-piece flags
+scoring/    rules_2026_27.py (done) - the only place scoring lives
+models/     minutes/ attack/ team/ defcon/ bonus/ compose.py
+optimise/   milp.py, chips.py, overrides.py
+backtest/   walk-forward engine, paired comparisons, resampling
+eval/       metrics, points-to-rank, top10k study
+baselines/  ep_next, price, odds-only, last5, openfpl adapter
+ops/        weekly scheduler, staleness/schema checks, alerting
+cli.py
 data/
   raw/        immutable API snapshots, never edited
   curated/    typed and joined

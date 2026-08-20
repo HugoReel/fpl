@@ -7,8 +7,8 @@ ground truth for every future season, and they cost about 2 MB a week.
 Write once, never mutate. Curation happens downstream in curate.py.
 
 Usage:
-    python -m fpl.ingest.snapshot --season 2026-27
-    python -m fpl.ingest.snapshot --season 2026-27 --gw 3
+    python -m ingest.snapshot --season 2026-27
+    python -m ingest.snapshot --season 2026-27 --gw 3
 
 Schedule it at minimum:
     - Friday evening   (team news is in, prices settled)

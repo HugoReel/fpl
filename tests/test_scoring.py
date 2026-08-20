@@ -7,7 +7,7 @@ into a backtest.
 
 import pytest
 
-from fpl.scoring.rules_2026_27 import (
+from scoring.rules_2026_27 import (
     MatchStats,
     Position,
     expected_points,
