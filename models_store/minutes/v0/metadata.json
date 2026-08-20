@@ -1,0 +1,103 @@
+{
+  "version": "v0",
+  "created_utc": "2026-08-20T19:57:07.593782+00:00",
+  "git_sha": "18537de49884f3ccfeb9cbb07b8c31d303bf052e",
+  "train_seasons": [
+    "2021-22",
+    "2022-23",
+    "2023-24",
+    "2024-25",
+    "2025-26"
+  ],
+  "n_rows": 138707,
+  "features": [
+    "element_type",
+    "gw",
+    "was_home",
+    "price",
+    "price_rank_in_team_pos",
+    "team_fixtures_in_gw",
+    "fixtures_next_7_days",
+    "days_since_prev_fixture",
+    "career_matches",
+    "is_new_to_data",
+    "matches_since_last_start",
+    "start_rate_1",
+    "start_rate_3",
+    "start_rate_5",
+    "minutes_mean_1",
+    "minutes_mean_3",
+    "minutes_mean_5",
+    "played_60_rate_5",
+    "sub_rate_5",
+    "prev_season_matches",
+    "prev_season_minutes",
+    "prev_season_start_rate",
+    "prev_pens_order",
+    "prev_corners_order",
+    "prev_fk_order"
+  ],
+  "lgb_params": {
+    "objective": "binary",
+    "learning_rate": 0.05,
+    "num_leaves": 31,
+    "min_data_in_leaf": 100,
+    "feature_fraction": 0.8,
+    "bagging_fraction": 0.8,
+    "bagging_freq": 1,
+    "seed": 20262027,
+    "bagging_seed": 20262027,
+    "feature_fraction_seed": 20262027,
+    "deterministic": true,
+    "force_row_wise": true,
+    "verbose": -1,
+    "num_threads": 4
+  },
+  "num_boost_round": 300,
+  "calib_fraction": 0.2,
+  "seed": 20262027,
+  "heads": {
+    "p_start": {
+      "train_rows": 138707
+    },
+    "p_60_given_start": {
+      "train_rows": 38947
+    },
+    "p_sub": {
+      "train_rows": 99760
+    }
+  },
+  "conditional_minutes": {
+    "start": {
+      "1": 89.55467422096318,
+      "2": 85.64910122342971,
+      "3": 80.42428937488826,
+      "4": 79.63870162297128
+    },
+    "sub": {
+      "1": 81.80379746835443,
+      "2": 35.52967186409123,
+      "3": 26.59702878365831,
+      "4": 23.21596555150712
+    },
+    "start_overall": 83.1338228875138,
+    "sub_overall": 29.23030303030303
+  },
+  "baseline_start_rates": {
+    "rates": {
+      "1|benched": 0.028425096030729832,
+      "1|started": 0.9020559680182753,
+      "1|unknown": 0.19689119170984457,
+      "2|benched": 0.09444533376020489,
+      "2|started": 0.7961225334621223,
+      "2|unknown": 0.25177304964539005,
+      "3|benched": 0.09167753353204174,
+      "3|started": 0.7618961896189619,
+      "3|unknown": 0.20027247956403268,
+      "4|benched": 0.07532321528948847,
+      "4|started": 0.7621567145376669,
+      "4|unknown": 0.17573221757322174
+    },
+    "overall": 0.2807861174994773
+  }
+}

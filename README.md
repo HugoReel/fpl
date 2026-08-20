@@ -23,42 +23,63 @@ Do not start with the model. The spine is:
 snapshot -> scoring module -> curated player_gw -> minutes model -> single-GW MILP
 ```
 
-Nothing else gets built until that runs end to end.
+Nothing else gets built until that runs end to end. Everything up to and
+including expected points is done. The MILP is next, and it is the last
+piece of the spine.
+
+```bash
+python -m ingest.snapshot --season 2026-27      # capture, run on a schedule
+python -m ingest.history --all                  # 2021-22 to 2025-26, ~8s warm
+python -m ingest.curate --season 2026-27        # live snapshots to Parquet
+python -m models.minutes.train --version v0     # walk forward, ~35s
+python -m models.minutes.predict --season 2026-27 --gw 1
+python -m models.compose --season 2026-27 --gw 1        # expected points
+python -m models.compose --season 2025-26 --historical  # replay a season, ~10s
+python -m experiments.exp1_minutes_attribution  # why minutes came first
+python -m experiments.ep_v0_sanity              # is the EP list mad
+```
 
 ## First fortnight
 
-**Week 1: get data flowing**
+**Week 1: get data flowing** (done)
 
-- [ ] `uv sync`, confirm `pytest` passes
-- [ ] Run `python -m ingest.snapshot --season 2026-27` and eyeball the output JSON
-- [ ] Schedule it: cron Friday evening, Saturday pre-deadline, Tuesday. Or a GitHub
-      Action on the same cadence. Do not overthink this
-- [ ] Clone `vaastav/Fantasy-Premier-League` for historical seasons. Note the
-      documented trap: the `xP` column is scraped after the gameweek and leaks.
-      `shift(1)` within player or drop it
-- [ ] Write `ingest/curate.py`: bootstrap + live snapshots -> tidy `player_gw`
-      Parquet partitioned by season and gw
+- [x] Snapshot the live API, immutable, schema validated
+- [x] Curate snapshots into `players`, `fixtures`, `player_fixture`, `player_gw`
+- [x] Historical seasons 2021-22 to 2025-26 from the vaastav archive, curated into
+      identical shapes so downstream cannot tell them apart. `xP` is dropped, not
+      shifted, because it is scraped after the gameweek and leaks
+- [x] Reconciliation against archive season totals, tolerance zero, over 99.8%
+      clean on every season
 
-**Week 2: the minutes model**
+**Week 2: the minutes model** (done)
 
-- [ ] Build `p_start`, `p_60plus` and `p_sub_appearance` as LightGBM classifiers
-- [ ] Calibrate them (isotonic). Uncalibrated probabilities will wreck your EV maths
-- [ ] Features: rolling starts (1/3/5), minutes trend, `status` and
-      `chance_of_playing_next_round` from the API, days rest, price tier as a
-      nailedness proxy, set-piece order fields
-- [ ] Baseline to beat: "started last game implies starts this game". If you cannot
-      beat that, your features are wrong
+- [x] `p_start`, `p_60_given_start` and `p_sub` as LightGBM classifiers
+- [x] Isotonic calibration, fitted on a chronological tail the booster never saw
+- [x] Walk forward evaluation, beats the started-last-match baseline on every
+      held out season
+- [x] Expected minutes from estimated conditional means, not a hardcoded 90
 
-Set-piece order is already in bootstrap (`penalties_order`,
-`corners_and_indirect_freekicks_order`, `direct_freekicks_order`). It is free and
-it is the highest signal-per-hour feature in the whole project. Use it in week 2,
-not v0.3.
+Two features the plan called for are deliberately absent, and the reason is worth
+knowing: `status`, `chance_of_playing_next_round` and current-season set-piece
+order survive in the archive only as an end-of-season snapshot, so training on
+them would leak the future into every earlier gameweek. The previous season's
+set-piece order is used instead, which is leak free. Once the weekly snapshots
+have accumulated a season of per-gameweek availability, these become the single
+biggest available upgrade. See `experiments/reports/minutes_model.md`.
 
 ## Then, in order
 
-3. **Pre-build experiment 1: error attribution.** Swap true minutes vs modelled
-   minutes into points composition on one archived season. Confirms minutes
-   dominates before you invest in per-90 modelling. Two evenings.
+3. **Pre-build experiment 1: error attribution.** Done, see
+   `experiments/reports/exp1_minutes_attribution.md`. Perfect minutes knowledge is
+   worth 0.279 MAE per player-fixture against 0.079 for perfect rate knowledge, so
+   minutes dominate and the build order holds. The model captures 20% of that gap.
+3b. **Expected points v0.** Done. `models/rates.py` holds deliberately crude
+   trailing rate estimators and `models/compose.py` puts them through the scoring
+   module with the minutes model. A whole season replays in about 10 seconds. The
+   known weakness is compression at the top of the ranking, written up in
+   `experiments/reports/ep_v0_sanity.md`: shrinkage is too aggressive for elite
+   players, so premiums are under-ranked against cheap nailed defenders. Item 6
+   is what fixes it.
 4. **Single-GW MILP** via `highspy`. Legal squad, XI, captain. Not multi-GW yet.
 5. **Pre-build experiment 2: odds-only baseline.** Bookmaker match and scorer odds
    plus a naive minutes rule, no ML. This is the bar. If your ML cannot beat it,
@@ -70,21 +91,26 @@ not v0.3.
 ## Layout
 
 ```
-ingest/     snapshot.py (done), curate.py, schema checks
+ingest/     snapshot.py, curate.py, history.py, validate.py (all done)
 mapping/    id maps, overrides.csv, join validators
 features/   feature builders, rolling windows, set-piece flags
 scoring/    rules_2026_27.py (done) - the only place scoring lives
-models/     minutes/ attack/ team/ defcon/ bonus/ compose.py
+models/     minutes/ (done) rates.py (v0) compose.py (done)
+            attack/ team/ defcon/ bonus/ replace rates.py later
 optimise/   milp.py, chips.py, overrides.py
 backtest/   walk-forward engine, paired comparisons, resampling
 eval/       metrics, points-to-rank, top10k study
 baselines/  ep_next, price, odds-only, last5, openfpl adapter
 ops/        weekly scheduler, staleness/schema checks, alerting
 cli.py
+experiments/        one-off studies, not production code
+  reports/          generated markdown, committed so results are reviewable
 data/
-  raw/        immutable API snapshots, never edited
-  curated/    typed and joined
-  features/   model-ready
+  raw/              immutable API snapshots, never edited
+  external/         vaastav archive cache, downloaded once
+  curated/          typed and joined, historical and live indistinguishable
+  predictions/      {season}/gw{n}/minutes.parquet
+models_store/       versioned model artefacts plus metadata json
 ```
 
 ## Stack

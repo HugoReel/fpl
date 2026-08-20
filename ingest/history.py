@@ -274,8 +274,25 @@ def build_player_fixture_history(
             # real counts for pre_defcon seasons.
             out[col] = 0
     out["total_points"] = pd.to_numeric(df["total_points"], errors="coerce").fillna(0).astype("int64")
+
+    # starts is the exact "was in the starting XI" flag and exists from
+    # 2022-23 onward. It earns no points, so it never appears in the live
+    # endpoint's explain blocks. That is why it is a nullable float here
+    # rather than one of the STAT_COLUMNS: null means "not recorded", and
+    # the minutes model falls back to a minutes proxy for those rows.
+    if "starts" in df.columns:
+        out["starts"] = pd.to_numeric(df["starts"], errors="coerce").astype("float64")
+    else:
+        out["starts"] = pd.Series(float("nan"), index=out.index, dtype="float64")
+
     out["started"] = out["minutes"].gt(0)
     out["played_60"] = out["minutes"].ge(60)
+
+    # Per fixture, so unlike the season team on players.parquet these stay
+    # correct for players transferred mid season.
+    out["was_home"] = df["was_home"].astype(bool)
+    out["opponent_team"] = pd.to_numeric(df["opponent_team"], errors="coerce").astype("int64")
+
     out["player_code"] = df["player_code"].astype("int64")
     out["source"] = "vaastav"
     out["rule_regime"] = rule_regime(season)

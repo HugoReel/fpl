@@ -248,6 +248,8 @@ def build_player_fixture(
     live_by_gw: dict[int, Path],
     season: str,
     player_code_by_id: dict[int, int] | None = None,
+    player_team_by_id: dict[int, int] | None = None,
+    fixture_teams: dict[int, tuple[int, int]] | None = None,
 ) -> pd.DataFrame:
     """One row per player per fixture, from the live endpoint's explain blocks.
 
@@ -293,8 +295,26 @@ def build_player_fixture(
         # Windows, which breaks dtype parity with the historical tables.
         df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).astype("int64")
 
+    # The live explain blocks only carry point-scoring identifiers, and a
+    # start scores nothing, so per-fixture starts is not available live.
+    # The column exists for parity with the historical tables, where it is
+    # populated from 2022-23 onward.
+    df["starts"] = pd.Series(float("nan"), index=df.index, dtype="float64")
     df["started"] = df["minutes"].gt(0)
     df["played_60"] = df["minutes"].ge(60)
+
+    # Home and opponent come from the fixture, matching how the historical
+    # tables carry them per fixture rather than per season.
+    if player_team_by_id is not None and fixture_teams is not None:
+        team = df["player_id"].map(player_team_by_id)
+        home = df["fixture_id"].map(lambda f: (fixture_teams.get(f) or (None, None))[0])
+        away = df["fixture_id"].map(lambda f: (fixture_teams.get(f) or (None, None))[1])
+        df["was_home"] = (team == home).astype(bool)
+        df["opponent_team"] = away.where(df["was_home"], home).astype("int64")
+    else:
+        df["was_home"] = pd.Series(False, index=df.index, dtype=bool)
+        df["opponent_team"] = pd.Series(0, index=df.index, dtype="int64")
+
     if player_code_by_id is not None:
         df["player_code"] = df["player_id"].map(player_code_by_id).astype("int64")
     df["source"] = "live"
@@ -399,7 +419,15 @@ def run(season: str, as_of: datetime | None = None) -> dict[str, Path]:
     if live_by_gw:
         log.info("found live snapshots for gameweeks %s", sorted(live_by_gw))
         player_code_by_id = {e["id"]: e["code"] for e in bootstrap["elements"]}
-        pf = build_player_fixture(live_by_gw, season, player_code_by_id)
+        player_team_by_id = {e["id"]: e["team"] for e in bootstrap["elements"]}
+        fixture_teams = None
+        if fixtures_path is not None:
+            fixture_teams = {
+                f["id"]: (f["team_h"], f["team_a"]) for f in load(fixtures_path)
+            }
+        pf = build_player_fixture(
+            live_by_gw, season, player_code_by_id, player_team_by_id, fixture_teams
+        )
         written["player_fixture"] = _write(pf, out_dir / "player_fixture.parquet")
 
         pgw = build_player_gw(pf, season)
