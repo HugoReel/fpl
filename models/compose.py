@@ -213,6 +213,7 @@ def run(
     from_gw: int = 1,
     version: str | None = None,
     curated_root: Path = CURATED_ROOT,
+    team_source: str = rates.DEFAULT_TEAM_SOURCE,
 ) -> dict[int, pd.DataFrame]:
     mode = "historical" if historical else "live"
     full = build_full_frame(season, gw, mode, curated_root)
@@ -226,7 +227,9 @@ def run(
     history = (
         full[full["season"] < season] if historical else full[full["minutes"].notna()]
     )
-    rated = rates.add_rates(full, history=history, curated_root=curated_root)
+    rated = rates.add_rates(
+        full, history=history, curated_root=curated_root, team_source=team_source
+    )
 
     if historical:
         target_gws = sorted(
@@ -265,13 +268,20 @@ def main() -> None:
     ap.add_argument("--from-gw", type=int, default=1, help="historical mode start gameweek")
     ap.add_argument("--version", default=None, help="minutes model version for live mode")
     ap.add_argument("--top", type=int, default=15)
+    ap.add_argument(
+        "--team-source",
+        default=rates.DEFAULT_TEAM_SOURCE,
+        choices=sorted(rates.TEAM_SOURCE_CHAIN),
+        help="where team goal expectations and clean sheets come from",
+    )
     args = ap.parse_args()
 
     if not args.historical and args.gw is None:
         raise SystemExit("pass --gw for live mode, or --historical for a whole season")
 
     results = run(
-        args.season, args.gw, args.historical, args.from_gw, args.version
+        args.season, args.gw, args.historical, args.from_gw, args.version,
+        team_source=args.team_source,
     )
 
     last_gw = max(results)

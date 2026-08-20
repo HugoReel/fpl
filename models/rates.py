@@ -22,10 +22,20 @@ Every constant, and why it is that value:
       position's mean. Roughly seven full matches, which is about where a
       striker's scoring rate starts to mean something.
 
+  TEAM_PRIOR_MATCHES = 10
+      Empirical Bayes prior weight on team form, in matches, so a club with
+      ten trailing matches sits halfway between its own record and the
+      league average. Ten matches of goals conceded is a genuinely noisy
+      estimate of a defence, and taking the raw ratio at face value made
+      the opponent adjustment the single largest term in a striker's
+      expected goals. It also pinned the clip below on roughly one player
+      fixture in nine, which is a model saturating rather than estimating.
+
   OPPONENT_ADJ_CLIP = (0.6, 1.6)
-      Opponent adjustments are ratios to the league average. Clipped because
-      a team that has conceded once in ten games would otherwise drive an
-      adjustment to zero on a ten match sample.
+      Opponent adjustments are ratios to the league average. Kept as a
+      safety rail after shrinkage rather than as the main control on
+      dispersion, so it should now bind rarely. If it starts binding often
+      again, the prior above is too weak.
 
   CLEAN_SHEET_CLIP = (0.02, 0.75)
       No defence is safe and none is hopeless. Bounds a rate that is
@@ -71,10 +81,28 @@ from scoring.rules_2026_27 import DEFCON_THRESHOLD, ELEMENT_TYPE_TO_POSITION
 
 log = logging.getLogger(__name__)
 
+# Where team goal expectations and clean sheet probabilities come from, in
+# preference order. Chosen by experiments/team_model_validation.py on
+# 2021-22 through 2024-25 outcome log loss: the de-vigged market beat
+# Dixon-Coles in every season, and Dixon-Coles beat the trailing rates in
+# every season. The market cannot price a fixture it has no odds for, so
+# Dixon-Coles is the fallback rather than a rejected alternative.
+TEAM_SOURCE_CHAIN = {
+    "trailing": [],
+    "market": ["market", "dixon_coles"],
+    "dixon_coles": ["dixon_coles", "market"],
+}
+# Accepted on the task 2 gated harness run: swapping clean sheets and
+# concessions to market expectations moved the mean from 54.36 to 57.58
+# points a gameweek. "trailing" stays reachable as the pre-swap comparison
+# and as the last fallback when no external source covers a fixture.
+DEFAULT_TEAM_SOURCE = "market"
+
 TRAILING_MATCHES = 10
 MIN_MINUTES_FOR_RATE = 30
 SHRINK_PRIOR_MINUTES = 600
 SHRINK_PRIOR_90S = SHRINK_PRIOR_MINUTES / 90.0
+TEAM_PRIOR_MATCHES = 10
 OPPONENT_ADJ_CLIP = (0.6, 1.6)
 CLEAN_SHEET_CLIP = (0.02, 0.75)
 VENUE_BLEND = 0.5
@@ -214,18 +242,25 @@ def load_team_matches(seasons: list[str], curated_root: Path = CURATED_ROOT) -> 
     return tm.sort_values(["kickoff_time", "team_name"], kind="stable").reset_index(drop=True)
 
 
-TEAM_FORM_COLUMNS = ["team_cs_10", "team_gf_10", "team_ga_10", "team_cs_venue_10"]
+# Totals and counts rather than means, because the shrinkage below needs to
+# know how much evidence a mean was built from.
+TEAM_FORM_COLUMNS = [
+    "team_cs_10",
+    "team_cs_venue_10",
+    "team_gf_sum",
+    "team_ga_sum",
+    "team_matches",
+]
 
 
-def _team_roll(frame: pd.DataFrame, col: str) -> pd.Series:
-    """Trailing mean over a club's previous matches, current match excluded."""
+def _team_roll(frame: pd.DataFrame, col: str, stat: str = "mean") -> pd.Series:
+    """Trailing statistic over a club's previous matches, current one excluded."""
     shifted = frame.groupby("team_name", sort=False)[col].shift(1)
+    roller = shifted.groupby(frame["team_name"], sort=False).rolling(
+        TRAILING_MATCHES, min_periods=1
+    )
     return (
-        shifted.groupby(frame["team_name"], sort=False)
-        .rolling(TRAILING_MATCHES, min_periods=1)
-        .mean()
-        .reset_index(level=0, drop=True)
-        .reindex(frame.index)
+        getattr(roller, stat)().reset_index(level=0, drop=True).reindex(frame.index)
     )
 
 
@@ -241,12 +276,13 @@ def team_trailing(team_matches: pd.DataFrame) -> pd.DataFrame:
 
     tm = team_matches.sort_values("kickoff_time", kind="stable").copy()
 
-    for src, name in (
-        ("clean_sheet", "team_cs_10"),
-        ("goals_for", "team_gf_10"),
-        ("goals_against", "team_ga_10"),
+    for src, name, stat in (
+        ("clean_sheet", "team_cs_10", "mean"),
+        ("goals_for", "team_gf_sum", "sum"),
+        ("goals_against", "team_ga_sum", "sum"),
+        ("goals_for", "team_matches", "count"),
     ):
-        tm[name] = _team_roll(tm, src)
+        tm[name] = _team_roll(tm, src, stat)
         # Both halves of a double gameweek are chosen at one deadline
         tm[name] = tm.groupby(["team_name", "season", "gw"], sort=False)[name].transform("first")
 
@@ -337,6 +373,53 @@ def player_trailing(df: pd.DataFrame) -> pd.DataFrame:
     return df.drop(columns=["_row", "_gw_start"])
 
 
+def load_team_expectations(
+    seasons: list[str], chain: list[str], curated_root: Path = CURATED_ROOT
+) -> pd.DataFrame:
+    """Per fixture team goal expectations, taking the first source that has them.
+
+    Sources are tried in order and coalesced per fixture, so a fixture the
+    market never priced still gets a number from the model behind it. The
+    source that actually supplied each row is carried through as
+    team_source, because a silent fallback is indistinguishable from a
+    working one until it is too late.
+    """
+    files = {"market": "fixture_odds.parquet", "dixon_coles": "team_model.parquet"}
+    cols = ["season", "fixture_id", "home_xg", "away_xg", "p_home_cs", "p_away_cs"]
+
+    merged: pd.DataFrame | None = None
+    for source in chain:
+        frames = []
+        for season in seasons:
+            path = curated_root / season / files[source]
+            if not path.exists():
+                continue
+            df = pd.read_parquet(path)
+            if not set(cols).issubset(df.columns):
+                continue
+            frames.append(df[cols].dropna(subset=["home_xg"]))
+        if not frames:
+            continue
+        layer = pd.concat(frames, ignore_index=True).drop_duplicates(
+            subset=["season", "fixture_id"]
+        )
+        layer["team_source"] = source
+        if merged is None:
+            merged = layer
+        else:
+            # Only fill fixtures the preferred source did not cover
+            gap = layer[~layer.set_index(["season", "fixture_id"]).index.isin(
+                merged.set_index(["season", "fixture_id"]).index
+            )]
+            if not gap.empty:
+                log.info("%s covers %d fixtures the preferred source missed", source, len(gap))
+                merged = pd.concat([merged, gap], ignore_index=True)
+
+    if merged is None:
+        return pd.DataFrame(columns=[*cols, "team_source"])
+    return merged
+
+
 def _shrunk_per90(events: pd.Series, nineties: pd.Series, prior_rate: pd.Series) -> pd.Series:
     """Empirical Bayes per-90 rate: observed events plus prior events, over total 90s."""
     return (events + prior_rate * SHRINK_PRIOR_90S) / (nineties + SHRINK_PRIOR_90S)
@@ -346,6 +429,7 @@ def add_rates(
     df: pd.DataFrame,
     history: pd.DataFrame | None = None,
     curated_root: Path = CURATED_ROOT,
+    team_source: str = DEFAULT_TEAM_SOURCE,
 ) -> pd.DataFrame:
     """Attach every rate expected_points needs, per player per fixture.
 
@@ -388,7 +472,7 @@ def add_rates(
     seasons = sorted(df["season"].unique())
     team_form = team_trailing(load_team_matches(seasons, curated_root))
     if team_form.empty:
-        for col in (*TEAM_FORM_COLUMNS, "opp_gf_10", "opp_ga_10"):
+        for col in (*TEAM_FORM_COLUMNS, "opp_gf_sum", "opp_ga_sum", "opp_matches"):
             df[col] = np.nan
     else:
         # fixture_id is only unique within a season, so season is part of
@@ -397,11 +481,14 @@ def add_rates(
         df = df.merge(
             own, on=["season", "fixture_id", "team_id"], how="left", validate="many_to_one"
         )
-        opp = team_form[["season", "fixture_id", "team_id", "team_gf_10", "team_ga_10"]].rename(
+        opp = team_form[
+            ["season", "fixture_id", "team_id", "team_gf_sum", "team_ga_sum", "team_matches"]
+        ].rename(
             columns={
                 "team_id": "opponent_team",
-                "team_gf_10": "opp_gf_10",
-                "team_ga_10": "opp_ga_10",
+                "team_gf_sum": "opp_gf_sum",
+                "team_ga_sum": "opp_ga_sum",
+                "team_matches": "opp_matches",
             }
         )
         df = df.merge(
@@ -411,13 +498,27 @@ def add_rates(
             validate="many_to_one",
         )
 
+    # Team form shrunk toward the league average, weighted by how many
+    # matches it was actually built from. A club with no record at all,
+    # which in practice means a promoted side in August, lands exactly on
+    # the league average rather than on whatever a tiny sample suggested.
+    def _shrunk_team_rate(total: str, count: str) -> pd.Series:
+        goals = df[total].fillna(0.0)
+        matches = df[count].fillna(0.0)
+        return (goals + TEAM_PRIOR_MATCHES * league_goals) / (matches + TEAM_PRIOR_MATCHES)
+
+    df["opp_ga_shrunk"] = _shrunk_team_rate("opp_ga_sum", "opp_matches")
+    df["opp_gf_shrunk"] = _shrunk_team_rate("opp_gf_sum", "opp_matches")
+    df["own_ga_shrunk"] = _shrunk_team_rate("team_ga_sum", "team_matches")
+
     lo, hi = OPPONENT_ADJ_CLIP
     # A leaky opponent raises attacking returns, a strong attacking opponent
-    # lowers clean sheet chances. Both are ratios to the league average, and
-    # a missing value means no form yet, so the neutral adjustment is 1.
-    df["opp_defence_adj"] = (df["opp_ga_10"] / league_goals).clip(lo, hi).fillna(1.0)
-    df["opp_attack_adj"] = (df["opp_gf_10"] / league_goals).clip(lo, hi).fillna(1.0)
-    df["own_defence_adj"] = (df["team_ga_10"] / league_goals).clip(lo, hi).fillna(1.0)
+    # lowers clean sheet chances. Both are ratios to the league average. The
+    # clip is a safety rail now that shrinkage controls the dispersion, and
+    # it should bind on very few rows.
+    df["opp_defence_adj"] = (df["opp_ga_shrunk"] / league_goals).clip(lo, hi)
+    df["opp_attack_adj"] = (df["opp_gf_shrunk"] / league_goals).clip(lo, hi)
+    df["own_defence_adj"] = (df["own_ga_shrunk"] / league_goals).clip(lo, hi)
 
     # Half overall clean sheet form, half the same venue's record. Where one
     # is missing the other carries it, and where both are missing the
@@ -432,7 +533,54 @@ def add_rates(
     df["p_clean_sheet"] = df["p_clean_sheet"].fillna(FALLBACK_CLEAN_SHEET)
 
     df["league_goals_per_team"] = league_goals
+    # Trailing form is the last fallback, so it is computed either way and
+    # then overwritten where a better source covers the fixture.
+    df["opp_goal_expectation"] = df["opp_gf_shrunk"]
+    df["team_source"] = "trailing"
+
+    if team_source != "trailing":
+        df = _apply_team_source(df, team_source, curated_root)
     return df
+
+
+def _apply_team_source(df: pd.DataFrame, team_source: str, curated_root: Path) -> pd.DataFrame:
+    """Overwrite clean sheet and concession inputs from the chosen source."""
+    chain = TEAM_SOURCE_CHAIN.get(team_source)
+    if chain is None:
+        raise ValueError(
+            f"unknown team_source {team_source!r}, expected one of {sorted(TEAM_SOURCE_CHAIN)}"
+        )
+
+    seasons = sorted(df["season"].unique())
+    external = load_team_expectations(seasons, chain, curated_root)
+    if external.empty:
+        log.warning("team_source %r found no data, staying on trailing rates", team_source)
+        return df
+
+    df = df.merge(
+        external.rename(columns={"team_source": "_source"}),
+        on=["season", "fixture_id"],
+        how="left",
+        suffixes=("", "_ext"),
+    )
+
+    home = df["was_home"].astype(bool)
+    own_cs = np.where(home, df["p_home_cs"], df["p_away_cs"])
+    opp_xg = np.where(home, df["away_xg"], df["home_xg"])
+    covered = pd.notna(df["_source"])
+
+    df["p_clean_sheet"] = np.where(covered, own_cs, df["p_clean_sheet"])
+    df["opp_goal_expectation"] = np.where(covered, opp_xg, df["opp_goal_expectation"])
+    df["team_source"] = df["_source"].fillna("trailing")
+
+    counts = df["team_source"].value_counts().to_dict()
+    log.info("team_source %r resolved to %s", team_source, counts)
+    if counts.get("trailing"):
+        log.warning(
+            "%d player-fixtures had no %s coverage and fell back to trailing rates",
+            counts["trailing"], team_source,
+        )
+    return df.drop(columns=["_source", "home_xg", "away_xg", "p_home_cs", "p_away_cs"], errors="ignore")
 
 
 def apply_minutes(df: pd.DataFrame) -> pd.DataFrame:
@@ -451,9 +599,14 @@ def apply_minutes(df: pd.DataFrame) -> pd.DataFrame:
     df["exp_saves"] = np.where(
         df["element_type"] == 1, df["rate_saves_p90"] * nineties, 0.0
     )
-    df["exp_goals_conceded"] = (
-        df["opp_gf_10"].fillna(df["league_goals_per_team"]) * df["own_defence_adj"] * nineties
-    )
+    # Concessions come from whichever team source won, and the defensive
+    # adjustment only applies to the trailing fallback. A market or
+    # Dixon-Coles expectation already accounts for both sides, so scaling it
+    # again by this team's own form would double count.
+    opp_goals = df["opp_goal_expectation"].fillna(df["league_goals_per_team"])
+    from_trailing = df.get("team_source", pd.Series("trailing", index=df.index)) == "trailing"
+    adjust = np.where(from_trailing, df["own_defence_adj"], 1.0)
+    df["exp_goals_conceded"] = opp_goals * adjust * nineties
     df["p_defcon"] = df["rate_defcon"] * involvement
     df["exp_bonus"] = df["rate_bonus"] * involvement
     df["exp_cards"] = df["card_points_per_appearance"] * df["p_appear"]

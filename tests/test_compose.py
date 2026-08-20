@@ -261,6 +261,52 @@ def test_opponent_adjustment_is_clipped_both_ways():
     assert extreme.clip(lo, hi).tolist() == [lo, hi]
 
 
+def _team_adj(goals_against, matches, league=1.45):
+    """The shrunk opponent defence adjustment for a given record."""
+    shrunk = (goals_against + rates.TEAM_PRIOR_MATCHES * league) / (
+        matches + rates.TEAM_PRIOR_MATCHES
+    )
+    return shrunk / league
+
+
+def test_a_team_with_no_record_is_treated_as_average():
+    """A promoted side in August is average, not whatever a zero sample says."""
+    assert _team_adj(0.0, 0.0) == pytest.approx(1.0)
+
+
+def test_team_shrinkage_pulls_an_extreme_record_toward_average():
+    """A watertight defence over ten games must not halve everyone's xG.
+
+    Seven conceded in ten is a raw ratio of 0.48, which the old code clipped
+    to the 0.6 floor. Shrunk, it lands well inside the clip, so the clip
+    stops doing the modelling.
+    """
+    raw = (7 / 10) / 1.45
+    shrunk = _team_adj(7.0, 10.0)
+    lo, _ = rates.OPPONENT_ADJ_CLIP
+    assert raw < lo  # the old behaviour saturated
+    assert lo < shrunk < 1.0  # the new one does not
+    assert shrunk > raw
+
+
+def test_team_shrinkage_weakens_as_matches_accumulate():
+    """Ten matches of evidence should move the estimate more than three."""
+    few = _team_adj(2.1, 3.0)
+    many = _team_adj(7.0, 10.0)
+    # Both records are 0.7 goals conceded a game, but the longer one is
+    # trusted further from average
+    assert many < few < 1.0
+
+
+def test_team_adjustment_stays_inside_the_clip_on_real_data():
+    """The clip is a safety rail now, so it should almost never bind."""
+    hist = _history(n_matches=10, element_type=2)
+    out = rates.add_rates(hist, history=hist)
+    lo, hi = rates.OPPONENT_ADJ_CLIP
+    for col in ("opp_defence_adj", "opp_attack_adj", "own_defence_adj"):
+        assert out[col].between(lo, hi).all()
+
+
 def test_clean_sheet_probability_stays_inside_its_bounds():
     hist = _history(n_matches=8, element_type=2)
     out = rates.add_rates(hist, history=hist)
@@ -281,7 +327,7 @@ def test_apply_minutes_scales_rates_by_expected_playing_time():
             "rate_defcon": [0.3, 0.3],
             "opp_defence_adj": [1.0, 1.0],
             "own_defence_adj": [1.0, 1.0],
-            "opp_gf_10": [1.5, 1.5],
+            "opp_goal_expectation": [1.5, 1.5],
             "league_goals_per_team": [1.45, 1.45],
             "card_points_per_appearance": [0.1, 0.1],
         }
@@ -306,7 +352,7 @@ def test_opponent_strength_moves_expected_goals():
             "rate_defcon": [0.0, 0.0],
             "opp_defence_adj": [1.4, 0.7],
             "own_defence_adj": [1.0, 1.0],
-            "opp_gf_10": [1.5, 1.5],
+            "opp_goal_expectation": [1.5, 1.5],
             "league_goals_per_team": [1.45, 1.45],
             "card_points_per_appearance": [0.0, 0.0],
         }

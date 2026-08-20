@@ -108,7 +108,11 @@ def build_rates(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def realised_points(row) -> int:
-    """Recompute this fixture's points from components, never trust a stored total."""
+    """Recompute this fixture's points from components, never trust a stored total.
+
+    Takes one row rather than a frame because the experiment already holds
+    its rows as dicts. `scoring/replay.py` is the frame level equivalent.
+    """
     stats = MatchStats(
         minutes=int(row["minutes"]),
         goals=int(row["goals_scored"]),

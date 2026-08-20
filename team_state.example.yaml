@@ -1,0 +1,64 @@
+# Copy to team_state.yaml and fill in from your own team, then run:
+#   python -m optimise.milp --season 2026-27 --gw 1 --mode transfer
+#
+# Players are identified by FPL player CODE, not by the per season id. Codes
+# are stable across seasons, ids are renumbered every August. Find them in
+# data/curated/{season}/players.parquet, column player_code.
+#
+# selling_price is what FPL will actually give you for the player, which
+# after a price rise is not the same as what they are worth now. You supply
+# it because the 50 percent sell-on rule is not modelled yet. purchase_price
+# is stored so a later phase can compute selling prices itself.
+#
+# bank is in millions, so 0.5 means 0.5m.
+# free_transfers is 1 to 5.
+
+bank: 0.5
+free_transfers: 2
+
+squad:
+  - code: 220627      # Kelleher, BRE, GKP
+    purchase_price: 5.0
+    selling_price: 5.0
+  - code: 154561
+    purchase_price: 4.5
+    selling_price: 4.5
+  - code: 172850
+    purchase_price: 6.0
+    selling_price: 6.1
+  - code: 205533
+    purchase_price: 6.5
+    selling_price: 6.5
+  - code: 98745
+    purchase_price: 8.0
+    selling_price: 8.0
+  - code: 244723
+    purchase_price: 4.5
+    selling_price: 4.5
+  - code: 116535
+    purchase_price: 5.5
+    selling_price: 5.5
+  - code: 141746
+    purchase_price: 12.0
+    selling_price: 12.0
+  - code: 232223
+    purchase_price: 8.0
+    selling_price: 8.0
+  - code: 178301
+    purchase_price: 7.0
+    selling_price: 7.0
+  - code: 214048
+    purchase_price: 7.0
+    selling_price: 7.0
+  - code: 209289
+    purchase_price: 6.0
+    selling_price: 6.0
+  - code: 178186
+    purchase_price: 8.0
+    selling_price: 8.0
+  - code: 461358
+    purchase_price: 6.0
+    selling_price: 6.0
+  - code: 200439
+    purchase_price: 5.5
+    selling_price: 5.5

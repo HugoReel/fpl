@@ -1,0 +1,20 @@
+# Copy to overrides.yaml to overrule the model. Delete the file to stop.
+#
+# This is where you put what the model cannot know: a manager's press
+# conference, a player carrying a knock, a rotation risk before a cup tie.
+#
+# Players are identified by FPL player CODE, which is stable across seasons,
+# not by the per season id. Find them in data/curated/{season}/players.parquet.
+#
+# An override that makes a legal squad impossible fails loudly and names the
+# constraint it broke, so a typo will not silently produce a worse team.
+
+# Must start. Not merely be in the squad, actually be in the eleven.
+lock: []
+
+# Must not appear in the squad at all.
+ban: []
+
+# Must wear the armband. Implies the player is in the eleven, so lock them
+# too if they are not an automatic pick.
+force_captain: null

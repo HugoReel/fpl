@@ -1,0 +1,215 @@
+{
+  "season": "2026-27",
+  "gw": 2,
+  "mode": "transfer",
+  "objective": 45.3052952670745,
+  "ep_xi": 39.44637542266497,
+  "ep_captain": 4.789884960181223,
+  "ep_bench": 10.685727580160167,
+  "bench_weight": 0.1,
+  "squad_value": 98.0,
+  "n_transfers": 1,
+  "paid_transfers": 0,
+  "hit_cost": 0.0,
+  "transfers_in": [
+    {
+      "player_code": 472769,
+      "web_name": "O'Reilly",
+      "team_short": "MCI",
+      "price": 6.5,
+      "ep_total": 4.621262120886471
+    }
+  ],
+  "transfers_out": [
+    {
+      "player_code": 226597,
+      "web_name": "Gabriel",
+      "team_short": "ARS",
+      "selling_price": 8.0,
+      "ep_total": 2.332126065778618
+    }
+  ],
+  "solve_seconds": 0.11127230001147836,
+  "squad": [
+    {
+      "player_id": 250,
+      "player_code": 80201,
+      "web_name": "Leno",
+      "position": "GKP",
+      "team_short": "FUL",
+      "price": 4.5,
+      "ep_total": 3.6700969325168873,
+      "in_xi": true,
+      "is_captain": false,
+      "is_vice": false
+    },
+    {
+      "player_id": 387,
+      "player_code": 472769,
+      "web_name": "O'Reilly",
+      "position": "DEF",
+      "team_short": "MCI",
+      "price": 6.5,
+      "ep_total": 4.621262120886471,
+      "in_xi": true,
+      "is_captain": false,
+      "is_vice": true
+    },
+    {
+      "player_id": 229,
+      "player_code": 17761,
+      "web_name": "Tarkowski",
+      "position": "DEF",
+      "team_short": "EVE",
+      "price": 6.0,
+      "ep_total": 2.789569799746574,
+      "in_xi": true,
+      "is_captain": false,
+      "is_vice": false
+    },
+    {
+      "player_id": 5,
+      "player_code": 445122,
+      "web_name": "J.Timber",
+      "position": "DEF",
+      "team_short": "ARS",
+      "price": 6.5,
+      "ep_total": 2.787224848488217,
+      "in_xi": true,
+      "is_captain": false,
+      "is_vice": false
+    },
+    {
+      "player_id": 426,
+      "player_code": 141746,
+      "web_name": "B.Fernandes",
+      "position": "MID",
+      "team_short": "MUN",
+      "price": 12.0,
+      "ep_total": 4.789884960181223,
+      "in_xi": true,
+      "is_captain": true,
+      "is_vice": false
+    },
+    {
+      "player_id": 480,
+      "player_code": 222531,
+      "web_name": "Gibbs-White",
+      "position": "MID",
+      "team_short": "NFO",
+      "price": 8.0,
+      "ep_total": 4.576596075123914,
+      "in_xi": true,
+      "is_captain": false,
+      "is_vice": false
+    },
+    {
+      "player_id": 452,
+      "player_code": 208706,
+      "web_name": "Bruno G.",
+      "position": "MID",
+      "team_short": "ARS",
+      "price": 7.0,
+      "ep_total": 3.5614622681218435,
+      "in_xi": true,
+      "is_captain": false,
+      "is_vice": false
+    },
+    {
+      "player_id": 368,
+      "player_code": 424876,
+      "web_name": "Szoboszlai",
+      "position": "MID",
+      "team_short": "LIV",
+      "price": 7.0,
+      "ep_total": 3.2405189719907854,
+      "in_xi": true,
+      "is_captain": false,
+      "is_vice": false
+    },
+    {
+      "player_id": 239,
+      "player_code": 232928,
+      "web_name": "Garner",
+      "position": "MID",
+      "team_short": "EVE",
+      "price": 6.0,
+      "ep_total": 3.0533663614698554,
+      "in_xi": true,
+      "is_captain": false,
+      "is_vice": false
+    },
+    {
+      "player_id": 55,
+      "player_code": 178301,
+      "web_name": "Watkins",
+      "position": "FWD",
+      "team_short": "AVL",
+      "price": 8.0,
+      "ep_total": 3.5896769502545034,
+      "in_xi": true,
+      "is_captain": false,
+      "is_vice": false
+    },
+    {
+      "player_id": 465,
+      "player_code": 538207,
+      "web_name": "Osula",
+      "position": "FWD",
+      "team_short": "NEW",
+      "price": 6.0,
+      "ep_total": 2.7667161338846933,
+      "in_xi": true,
+      "is_captain": false,
+      "is_vice": false
+    },
+    {
+      "player_id": 82,
+      "player_code": 200720,
+      "web_name": "Kelleher",
+      "position": "GKP",
+      "team_short": "BRE",
+      "price": 5.0,
+      "ep_total": 3.602638319797068,
+      "in_xi": false,
+      "is_captain": false,
+      "is_vice": false
+    },
+    {
+      "player_id": 88,
+      "player_code": 607464,
+      "web_name": "Kayode",
+      "position": "DEF",
+      "team_short": "BRE",
+      "price": 4.5,
+      "ep_total": 2.6381046750482233,
+      "in_xi": false,
+      "is_captain": false,
+      "is_vice": false
+    },
+    {
+      "player_id": 84,
+      "player_code": 432830,
+      "web_name": "Collins",
+      "position": "DEF",
+      "team_short": "BRE",
+      "price": 5.5,
+      "ep_total": 2.534380682012845,
+      "in_xi": false,
+      "is_captain": false,
+      "is_vice": false
+    },
+    {
+      "player_id": 248,
+      "player_code": 486385,
+      "web_name": "Beto",
+      "position": "FWD",
+      "team_short": "EVE",
+      "price": 5.5,
+      "ep_total": 1.910603903302031,
+      "in_xi": false,
+      "is_captain": false,
+      "is_vice": false
+    }
+  ]
+}
